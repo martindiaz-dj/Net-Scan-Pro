@@ -94,7 +94,7 @@ def calculate_cidr(input_str: str):
     table.add_row("Dirección de Difusión (Broadcast)", str(broadcast), "Destino para tramas broadcast")
     table.add_row("Primer Host Utilizable", str(first_host), "IP mínima asignable a un equipo")
     table.add_row("Último Host Utilizable", str(last_host), "IP máxima asignable a un equipo")
-    table.add_row("Rango Asignable de Hosts", f"{first_host}  ➡  {last_host}", f"{usable_hosts:,} direcciones válidas")
+    table.add_row("Rango Asignable de Hosts", f"{first_host} -> {last_host}", f"{usable_hosts:,} direcciones válidas")
     table.add_row("Total de IPs en el Bloque", f"{total_ips:,}", f"2^{32 - prefix} direcciones totales")
     table.add_row("Clasificación de Red", get_ip_class(ip), "Clasificación con clase original")
     table.add_row("Ámbito / Tipo de Dirección", get_scope_type(ip), "Regulación IANA / RFC")

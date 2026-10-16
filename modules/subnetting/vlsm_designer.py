@@ -1,11 +1,13 @@
 """
 Diseñador de Subredes de Longitud Variable (VLSM Designer).
 Planificación y optimización de direccionamiento IP para arquitectos e ingenieros de red.
+Optimizado para adaptarse limpiamente a consolas estándar (CMD / PowerShell) sin desbordamiento.
 """
 import ipaddress
 import math
 from rich.table import Table
 from rich.panel import Panel
+from rich.prompt import Confirm
 from rich import box
 
 from core.ui import console, print_section_header, print_info, print_error, print_success, print_warning, get_input
@@ -30,7 +32,6 @@ def design_vlsm(major_net_str: str, requirements: list[tuple[str, int]]):
 
     allocations = []
     total_allocated_ips = 0
-
     overflow = False
 
     for name, req_hosts in sorted_reqs:
@@ -54,6 +55,8 @@ def design_vlsm(major_net_str: str, requirements: list[tuple[str, int]]):
             continue
 
         subnet = ipaddress.IPv4Network((current_int, prefix))
+        netmask = subnet.netmask
+        wildcard = ipaddress.IPv4Address(int(netmask) ^ 0xFFFFFFFF)
         first_host = subnet.network_address + 1
         last_host = subnet.broadcast_address - 1
         usable_hosts = block_size - 2
@@ -65,8 +68,11 @@ def design_vlsm(major_net_str: str, requirements: list[tuple[str, int]]):
             "usable": usable_hosts,
             "subnet": str(subnet),
             "prefix": f"/{prefix}",
-            "netmask": str(subnet.netmask),
-            "range": f"{first_host} - {last_host}",
+            "netmask": str(netmask),
+            "wildcard": str(wildcard),
+            "first_host": str(first_host),
+            "last_host": str(last_host),
+            "range": f"{first_host} -> {last_host}",
             "broadcast": str(subnet.broadcast_address),
             "wasted": wasted,
             "error": None
@@ -75,34 +81,30 @@ def design_vlsm(major_net_str: str, requirements: list[tuple[str, int]]):
         current_int += block_size
         total_allocated_ips += block_size
 
-    # Construir tabla de resultados
+    # Construir tabla de resultados compacta y responsiva (se adapta a consolas de 80 columnas)
     table = Table(title=f"Planificación VLSM sobre Red Base: {major}", box=box.ROUNDED)
     table.add_column("Subred / VLAN", style="bold cyan")
-    table.add_column("Req.", style="yellow", justify="right")
-    table.add_column("Capacidad", style="green", justify="right")
-    table.add_column("Red Asignada", style="bold white", min_width=16)
-    table.add_column("Máscara", style="dim white", min_width=15)
-    table.add_column("Rango Asignable (Hosts)", style="bright_yellow", min_width=31)
-    table.add_column("Broadcast", style="magenta", min_width=15)
+    table.add_column("Hosts\nReq/Cap", style="yellow", justify="center")
+    table.add_column("Red CIDR\nMáscara", style="bold white", no_wrap=True)
+    table.add_column("Rango Asignable\n(Primero -> Último)", style="bright_yellow", no_wrap=True)
+    table.add_column("Broadcast", style="magenta", no_wrap=True)
 
     for a in allocations:
-        if a["error"]:
-            table.add_row(a["name"], str(a["req"]), "-", "[red]DESBORDAMIENTO[/red]", "-", a["error"], "-")
+        if a.get("error"):
+            table.add_row(a["name"], str(a["req"]), "[red]ERROR[/red]", a["error"], "-")
         else:
             table.add_row(
                 a["name"],
-                str(a["req"]),
-                str(a["usable"]),
-                a["subnet"],
-                a["netmask"],
-                a["range"],
+                f"{a['req']} / {a['usable']}",
+                f"{a['subnet']}\n[dim]{a['netmask']}[/dim]",
+                f"{a['first_host']}\n -> {a['last_host']}",
                 a["broadcast"]
             )
 
     console.print()
     console.print(table)
 
-    # Resumen de eficiencia
+    # Resumen de balance de direccionamiento
     major_capacity = major.num_addresses
     free_ips = max(0, major_capacity - total_allocated_ips)
     efficiency = (total_allocated_ips / major_capacity * 100) if major_capacity > 0 else 0
@@ -123,6 +125,25 @@ def design_vlsm(major_net_str: str, requirements: list[tuple[str, int]]):
         print_error("¡Alerta!: La red base no tiene suficientes direcciones para cubrir todas las subredes solicitadas.")
     else:
         print_success("Diseño VLSM completado de manera óptima y sin solapamientos.")
+
+    # Opción de desglose en fichas técnicas detalladas
+    valid_allocs = [a for a in allocations if not a.get("error")]
+    if valid_allocs:
+        try:
+            if Confirm.ask("\n¿Desea ver las fichas técnicas individuales detalladas?", default=False):
+                console.print()
+                for a in valid_allocs:
+                    card_content = (
+                        f"[bold cyan]Subred Asignada:[/bold cyan] [bold white]{a['subnet']}[/bold white]  |  "
+                        f"[bold cyan]Máscara:[/bold cyan] {a['netmask']}  |  [bold cyan]Wildcard:[/bold cyan] {a['wildcard']}\n"
+                        f"[bold yellow]Rango de Hosts:[/bold yellow] {a['first_host']} -> {a['last_host']}  |  "
+                        f"[bold magenta]Broadcast:[/bold magenta] {a['broadcast']}\n"
+                        f"[bold green]Capacidad:[/bold green] {a['usable']} hosts asignados  |  "
+                        f"[dim]Requeridos: {a['req']} (Margen/Desperdicio: {a['wasted']} IPs)[/dim]"
+                    )
+                    console.print(Panel(card_content, title=f"[bold bright_white]{a['name']}[/bold bright_white]", border_style="cyan", box=box.ROUNDED))
+        except (KeyboardInterrupt, EOFError):
+            pass
 
 def vlsm_menu():
     """Submenú interactivo para el Diseñador VLSM."""
